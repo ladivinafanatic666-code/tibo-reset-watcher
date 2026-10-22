@@ -1,0 +1,65 @@
+name: Codex message signal test
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+# Share the monitor's lock so neither workflow overwrites the state branch.
+concurrency:
+  group: reset-monitor-state
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: true
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Load the existing monitor state branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          signal_tree="$RUNNER_TEMP/codex-signal-state"
+          git fetch --no-tags origin refs/heads/reset-watcher-state
+          state_commit="$(git rev-parse FETCH_HEAD)"
+          git worktree add --detach "$signal_tree" "$state_commit"
+          test -f "$signal_tree/data/state.json"
+          echo "SIGNAL_TREE=$signal_tree" >> "$GITHUB_ENV"
+      - name: Write a public test event without prompts or account credentials
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          event_id = 'automation_test_' + os.environ['GITHUB_RUN_ID']
+          event = {'schema_version': 1, 'id': event_id, 'type': 'automation_test',
+                   'source': 'github_actions', 'created_at': datetime.now(timezone.utc).isoformat()}
+          path = Path(os.environ['SIGNAL_TREE']) / 'data' / 'events' / (event_id + '.json')
+          path.parent.mkdir(parents=True, exist_ok=True)
+          if not path.exists():
+              path.write_text(json.dumps(event, indent=2) + '\n', encoding='utf-8')
+          print('Test signal:', event_id)
+          PY
+      - name: Persist the signal for the local receiver
+        shell: bash
+        run: |
+          set -euo pipefail
+          event_file="data/events/automation_test_$GITHUB_RUN_ID.json"
+          git -C "$SIGNAL_TREE" add -- "$event_file"
+          if git -C "$SIGNAL_TREE" diff --cached --quiet; then
+            echo "Test signal already exists."
+            exit 0
+          fi
+          git -C "$SIGNAL_TREE" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Publish Codex automation test signal'
+          signal_commit="$(git -C "$SIGNAL_TREE" rev-parse HEAD)"
+          git push origin "$signal_commit:refs/heads/reset-watcher-state"

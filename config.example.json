@@ -1,0 +1,11 @@
+{
+  "source": "community",
+  "event_mode": "completed",
+  "email_enabled": true,
+  "interval_seconds": 300,
+  "recipient": "your-email@example.com",
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 465,
+  "smtp_security": "SSL",
+  "smtp_user": "your-email@example.com"
+}

@@ -1,0 +1,7 @@
+__pycache__/
+data/
+config.json
+*.pyc
+github-upload/
+tibo-reset-watcher.zip
+.reset-watcher-test-*/

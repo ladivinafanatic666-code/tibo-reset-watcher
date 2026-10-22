@@ -1,0 +1,7 @@
+{
+  "repo_url": "https://github.com/OWNER/REPOSITORY.git",
+  "thread_id": "PASTE_YOUR_CHAT_UUID_HERE",
+  "instruction": "Reply only with \"GitHub automation test successful\". Do not use tools or trigger another test.",
+  "poll_seconds": 15,
+  "codex_path": "C:/path/to/codex.exe"
+}

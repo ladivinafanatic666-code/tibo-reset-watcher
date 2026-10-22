@@ -1,0 +1,50 @@
+name: Tests
+
+on:
+  push:
+    branches-ignore: [reset-watcher-state]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Offline behavior tests
+        run: python -m unittest discover -v
+      - name: Check the live community source without email or state changes
+        if: github.event_name == 'workflow_dispatch' && runner.os == 'Linux'
+        run: python cloud_watch.py --preview
+      - name: Diagnose public source connectivity if the live check fails
+        if: failure() && github.event_name == 'workflow_dispatch' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, urllib.error
+          import watcher
+          for url in ('https://tibo.cc/api/v1/status', 'https://tibo.cc/api/v1/resets?limit=100',
+                      'https://codex-resets.com/api/v1/status', 'https://codex-resets.com/api/v1/resets?limit=100'):
+              try:
+                  result = watcher.fetch_json(url)
+                  print(json.dumps({'url': url, 'status': 200, 'payload_type': type(result).__name__}))
+              except Exception as exc:
+                  reason = getattr(exc, 'reason', exc)
+                  print(json.dumps({'url': url, 'error_type': type(exc).__name__,
+                                    'reason_type': type(reason).__name__, 'errno': getattr(reason, 'errno', None),
+                                    'reason_detail': str(reason),
+                                    'verify_message': getattr(reason, 'verify_message', None),
+                                    'http_status': getattr(exc, 'code', None)}))
+          PY
+      - name: Windows settings window self-test
+        if: runner.os == 'Windows'
+        run: python app.py --self-test

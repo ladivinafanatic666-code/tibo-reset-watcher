@@ -1,0 +1,124 @@
+name: Tibo reset alerts
+
+on:
+  schedule:
+    # GitHub schedules may run late; this requests a check every five minutes.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      test_email:
+        description: "Send a test email before checking for new completed resets"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: reset-monitor-state
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RESET_SOURCE: ${{ vars.RESET_SOURCE || 'community' }}
+      RESET_EVENT_MODE: completed
+      RESET_EMAIL_ENABLED: "true"
+      SMTP_HOST: ${{ vars.SMTP_HOST || 'smtp.gmail.com' }}
+      SMTP_PORT: ${{ vars.SMTP_PORT || '465' }}
+      SMTP_SECURITY: ${{ vars.SMTP_SECURITY || 'SSL' }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      ALERT_TO: ${{ secrets.ALERT_TO }}
+      X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+
+    steps:
+      - name: Check out program from the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Restore durable monitor state
+        id: restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          state_tree="$RUNNER_TEMP/reset-watcher-state"
+          state_ref="refs/heads/reset-watcher-state"
+          export RESET_DATA_DIR="$state_tree/data"
+          echo "RESET_DATA_DIR=$RESET_DATA_DIR" >> "$GITHUB_ENV"
+
+          # Status 2 means the branch does not exist. Network or authorization
+          # errors are different failures and must never reset the baseline.
+          if git ls-remote --exit-code --heads origin "$state_ref" > "$RUNNER_TEMP/reset-state-remote.txt"; then
+            git fetch --no-tags origin "$state_ref"
+            state_commit="$(git rev-parse FETCH_HEAD)"
+            git worktree add --detach "$state_tree" "$state_commit"
+            if [[ ! -f "$RESET_DATA_DIR/state.json" ]]; then
+              echo "::error::Existing state branch has no data/state.json; refusing to establish a new baseline."
+              exit 1
+            fi
+            python -c 'import json, os, pathlib; json.loads((pathlib.Path(os.environ["RESET_DATA_DIR"]) / "state.json").read_text(encoding="utf-8"))'
+          else
+            remote_status=$?
+            if [[ "$remote_status" -ne 2 ]]; then
+              echo "::error::Could not inspect state branch; refusing to establish a new baseline."
+              exit "$remote_status"
+            fi
+            # A separate empty root commit keeps runtime state out of the
+            # program branch. No existing branch is deleted or overwritten.
+            empty_tree="$(git mktree < /dev/null)"
+            state_commit="$(git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit-tree "$empty_tree" -m 'Initialize reset watcher state')"
+            git worktree add --detach "$state_tree" "$state_commit"
+          fi
+
+          mkdir -p "$RESET_DATA_DIR/events"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Send an optional test email
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_email }}
+        run: python watcher.py --test-email
+
+      - name: Detect completed resets and deliver email
+        run: python cloud_watch.py
+
+      - name: Persist queue, delivery progress, and public reset events
+        # A failed SMTP attempt must still retain its pending delivery queue.
+        # Restore must have succeeded, so missing state cannot overwrite history.
+        if: ${{ always() && steps.restore.outputs.ready == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          state_tree="$RUNNER_TEMP/reset-watcher-state"
+          if [[ ! -f "$RESET_DATA_DIR/state.json" ]]; then
+            echo "No monitor state was created; nothing to persist."
+            exit 0
+          fi
+
+          # Only state and event JSON are committed. Credentials, logs, lock
+          # files, and machine settings are deliberately outside this allowlist.
+          python -c 'import json, os, pathlib; json.loads((pathlib.Path(os.environ["RESET_DATA_DIR"]) / "state.json").read_text(encoding="utf-8"))'
+          git -C "$state_tree" add -- data/state.json
+          while IFS= read -r -d '' event; do
+            git -C "$state_tree" add -- "${event#"$state_tree/"}"
+          done < <(find "$RESET_DATA_DIR/events" -maxdepth 1 -type f -name '*.json' -print0)
+
+          if git -C "$state_tree" diff --cached --quiet; then
+            echo "Monitor state is unchanged."
+            exit 0
+          fi
+          git -C "$state_tree" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Update reset monitor state'
+          state_commit="$(git -C "$state_tree" rev-parse HEAD)"
+          # Run the authenticated push from the original checkout. No force
+          # push: unexpected concurrent changes fail visibly instead of losing data.
+          git push origin "$state_commit:refs/heads/reset-watcher-state"
