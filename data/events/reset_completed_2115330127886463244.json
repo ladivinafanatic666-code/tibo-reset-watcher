@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "reset_completed_2115330127886463244",
+  "type": "reset_completed",
+  "detected_at": "2026-10-28T11:33:52.402487+00:00",
+  "author": "thsottiaux",
+  "post_id": "2115330127886463244",
+  "post_url": "https://x.com/thsottiaux/status/2115330127886463244",
+  "announced_at": "2026-10-28T06:29:38.000Z",
+  "text": "And it's done. See you tomorrow for some good news. https://t.co/WhJle2cWRG",
+  "context": "Community-recorded reset announcement",
+  "source": "community",
+  "source_metadata": "Community aggregator: https://tibo.cc; original data: https://codex-resets.com.\nLast successful community fetch: 2026-10-28T11:31:26.244888+00:00; response stale=false.\nCommunity records may be delayed or incomplete. A preview does not confirm a completed reset, and a public record does not verify your personal quota.",
+  "personal_quota_verified": false
+}
