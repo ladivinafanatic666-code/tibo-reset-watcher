@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "reset_completed_2117035794678546764",
+  "type": "reset_completed",
+  "detected_at": "2026-11-01T23:50:46.578464+00:00",
+  "author": "thsottiaux",
+  "post_id": "2117035794678546764",
+  "post_url": "https://x.com/thsottiaux/status/2117035794678546764",
+  "announced_at": "2026-11-01T23:27:20.000Z",
+  "text": "Day 28/ Banked 2/2",
+  "context": "Community-recorded reset announcement",
+  "source": "community",
+  "source_metadata": "Community aggregator: https://tibo.cc; original data: https://codex-resets.com.\nLast successful community fetch: 2026-11-01T23:48:27.515928+00:00; response stale=false.\nCommunity records may be delayed or incomplete. A preview does not confirm a completed reset, and a public record does not verify your personal quota.",
+  "personal_quota_verified": false
+}
